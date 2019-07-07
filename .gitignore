@@ -1,4 +1,6 @@
+baselines/
 data/
+tools/
 
 # User-specific stuff
 .idea/**/workspace.xml
