@@ -1,6 +1,9 @@
 baselines/
-data/
+datasets/
 tools/
+baselines.tgz
+datasets.tgz
+tools.tgz
 
 # User-specific stuff
 .idea/**/workspace.xml
