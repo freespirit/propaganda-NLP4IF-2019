@@ -21,10 +21,10 @@ ARTICLE_LABEL_PATTERN_FLC = "article{:s}.task-FLC.labels"
 ARTICLE_LABEL_PATTERN_SLC = "article{:s}.task-SLC.labels"
 
 TEMPLATE_DEV_SLC = os.path.join(DATASET_DIR, "dev.template-output-SLC.out")
+OUTPUT_SLC_TXT = "dev.slc.txt"
 
 LABELS = {"propaganda": 1,
           "non-propaganda": 0}
-
 INT_LABELS = {1: "propaganda",
               0: "non-propaganda"}
 
@@ -93,7 +93,7 @@ def save_slc_predictions(articles: Sequence[Article]):
                    (output["sentence_id"] == (sentence_id + 1))
             output.loc[mask, "label"] = prediction
 
-    output.to_csv(sep="\t", header=False, index=False, path_or_buf="dev.slc")
+    output.to_csv(sep="\t", header=False, index=False, path_or_buf=OUTPUT_SLC_TXT)
 
 
 if __name__ == "__main__":
