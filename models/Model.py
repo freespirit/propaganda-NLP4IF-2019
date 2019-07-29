@@ -30,7 +30,7 @@ class Model:
         pass
 
     def predict_slc(self, sentences: Sequence[str]) -> Sequence[int]:
-        return [0 for s in sentences]
+        return [1 for s in sentences]
 
     def predict_flc(self, articles: Sequence[Article]) -> Sequence[Article]:
         return [article for article in articles]
