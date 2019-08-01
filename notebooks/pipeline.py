@@ -69,14 +69,16 @@ class DataPreprocessor:
         if label in LABELS:
             return LABELS.get(label)
         else:
-            raise Exception("Label ({}) is not recognized!".format(label))
+            raise Exception("Label ({}) is not recognized!"
+                            .format(label))
 
     @staticmethod
     def int_to_label(int_label: int):
         if int_label in INT_LABELS:
             return INT_LABELS.get(int_label)
         else:
-            raise Exception("Int label ({}) is not recognized".format(int_label))
+            raise Exception("Int label ({}) is not recognized"
+                            .format(int_label))
 
 
 
@@ -93,7 +95,8 @@ def save_slc_predictions(articles: Sequence[Article]):
                    (output["sentence_id"] == (sentence_id + 1))
             output.loc[mask, "label"] = prediction
 
-    output.to_csv(sep="\t", header=False, index=False, path_or_buf=OUTPUT_SLC_TXT)
+    output.to_csv(sep="\t", header=False, index=False,
+                  path_or_buf=OUTPUT_SLC_TXT)
 
 
 if __name__ == "__main__":
@@ -111,7 +114,7 @@ if __name__ == "__main__":
 
     model = Model()
     model.train_slc(train_sentences)
-    model.save(PROPAGANDA_MODEL_FILE)
+    Model.save(model, PROPAGANDA_MODEL_FILE)
 
     dev_data_loader = DataLoader(DEV_DATA_DIR,
                                  ARTICLE_FILE_ID_PATTERN,
@@ -119,9 +122,8 @@ if __name__ == "__main__":
                                  ARTICLE_LABEL_PATTERN_FLC)
     dev_articles = dev_data_loader.load_data()
 
-    eval_model = Model()
-    eval_model.load(PROPAGANDA_MODEL_FILE)
-
+    eval_model = Model.load(PROPAGANDA_MODEL_FILE)
+    
     for article in dev_articles:
         sentences = article.article_sentences
         predictions = eval_model.predict_slc(sentences)

@@ -9,10 +9,13 @@ class Model:
     def __init__(self):
         pass
 
-    def load(self, file_from):
-        pass
+    @staticmethod
+    def load(file_from) -> 'Model':
+        # TODO actually load anything from the file, if recognized
+        return Model()
 
-    def save(self, file_to):
+    @staticmethod
+    def save(model: 'Model', file_to):
         pass
 
     def train_slc(self, data: Sequence[Tuple[str, int]]):
