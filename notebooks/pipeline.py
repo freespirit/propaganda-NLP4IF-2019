@@ -134,7 +134,7 @@ logging.basicConfig(level=logging.INFO)
 COLUMN_TEXT = "text"
 COLUMN_LABEL = "label"
 
-EPOCHS = 1
+EPOCHS = 4
 BATCH_SIZE = 32
 
 
@@ -206,7 +206,8 @@ class Model:
         optimizer = torch.optim.Adam(self.model.parameters(),
                                      lr=2e-5)
 
-        for epoch in tqdm.tqdm(range(EPOCHS)):
+        for epoch in range(EPOCHS):
+            print("EPOCH {}".format(epoch))
             self.model.train()
             for step, batch in enumerate(tqdm.tqdm(train_dataloader)):
                 optimizer.zero_grad()
@@ -223,7 +224,8 @@ class Model:
                 optimizer.step()
 
             self.model.eval()
-            for step, batch in enumerate(tqdm.tqdm(validation_dataloader)):
+            validation_accuracy, validation_steps = 0, 0
+            for step, batch in enumerate(validation_dataloader):
                 inputs, labels = tuple(t.to(self.device) for t in batch)
                 with torch.no_grad():
                     outputs = self.model(inputs)
@@ -231,10 +233,11 @@ class Model:
 
                     _, indices = torch.max(logits, dim=1)
 
-                    validation_accuracy = sklearn.metrics.accuracy_score(
-                        labels.detach().cpu().numpy(),
-                        indices.numpy())
-                    print("Validation accuracy: {}".format(validation_accuracy))
+                validation_accuracy += sklearn.metrics.accuracy_score(
+                    labels.detach().cpu().numpy(),
+                    indices.detach().cpu().numpy())
+                validation_steps += 1
+            print("Validation accuracy: {}".format(validation_accuracy / validation_steps))
 
         test_sentences = [t[0] for t in test_dataloader][0].numpy()
         test_labels = [t[1] for t in test_dataloader][0].numpy()
@@ -260,8 +263,6 @@ class Model:
                             sklearn.metrics.precision_score(test_labels, baseline_predictions),
                             sklearn.metrics.recall_score(test_labels, baseline_predictions),
                             sklearn.metrics.f1_score(test_labels, baseline_predictions)))
-
-
 
     def tokenize_texts(self, texts: np.ndarray):
         tokenizer = self.tokenizer
@@ -289,11 +290,9 @@ class Model:
         tokens_tensor = self.tokenize_texts(sentences)
         predict_dataset = TensorDataset(tokens_tensor)
         predict_dataloader = DataLoader(predict_dataset,
-                                        sampler=SequentialSampler(
-                                            predict_dataset),
                                         batch_size=BATCH_SIZE)
         self.model.eval()
-        for i, batch in enumerate(tqdm.tqdm(predict_dataloader)):
+        for i, batch in enumerate(predict_dataloader):
             batch = tuple(t.to(self.device) for t in batch)
             with torch.no_grad():
                 outputs = self.model(batch[0])
@@ -301,7 +300,6 @@ class Model:
 
             _, indices = torch.max(logits, dim=1)
             indices = indices.detach().cpu().numpy()
-            print(indices)
             result.extend(indices)
 
         assert len(result) == len(sentences)
@@ -404,7 +402,7 @@ if __name__ == "__main__":
                                      ARTICLE_LABEL_PATTERN_FLC)
     dev_articles = dev_data_loader.load_data()
 
-    for article in dev_articles:
+    for article in tqdm.tqdm(dev_articles):
         sentences = article.article_sentences
         predictions = model.predict_slc(sentences)
         article.set_slc_labels(predictions)
