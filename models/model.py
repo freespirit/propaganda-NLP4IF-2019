@@ -7,8 +7,11 @@ import torch
 import tqdm
 
 from keras.preprocessing.sequence import pad_sequences
+
 from pytorch_transformers import BertTokenizer, BertModel,\
     BertForSequenceClassification
+from pytorch_transformers import AdamW, WarmupLinearSchedule
+
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
     SequentialSampler
 
@@ -71,8 +74,11 @@ class Model:
                                      sampler=SequentialSampler(test_dataset),
                                      batch_size=BATCH_SIZE)
 
-        optimizer = torch.optim.Adam(self.model.parameters(),
-                                     lr=2e-5)
+        # optimizer = torch.optim.Adam(self.model.parameters(), lr=2e-5)
+        optimizer = AdamW(self.model.parameters(), lr=1e-3, correct_bias=False)
+        scheduler = WarmupLinearSchedule(optimizer,
+                                         warmup_steps=100,
+                                         t_total=1000)
 
         for epoch in range(EPOCHS):
             print("EPOCH {}".format(epoch))
@@ -97,11 +103,11 @@ class Model:
                 outputs = self.model(input_tensor, labels=labels_tensor)
                 loss = outputs[0]
 
-                if step % BATCH_SIZE == 100:
-                    print(loss.item())
-
                 loss.backward()
                 optimizer.step()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(),
+                                               max_norm=1.0)
+                scheduler.step(epoch=epoch)
 
             self.model.eval()
             validation_accuracy, validation_steps = 0, 0
