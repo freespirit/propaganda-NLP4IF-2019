@@ -7,6 +7,8 @@ import torch
 import tqdm
 
 from keras.preprocessing.sequence import pad_sequences
+from pytorch_transformers import BertTokenizer, BertModel,\
+    BertForSequenceClassification
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
     SequentialSampler
 
@@ -23,14 +25,11 @@ class Model:
         if model is not None:
             self.model = model
         else:
-            self.model = torch.hub.load('huggingface/pytorch-pretrained-BERT',
-                                        'bertForSequenceClassification',
-                                        'bert-base-cased',
-                                        num_labels=2)
+            self.model = BertForSequenceClassification.from_pretrained(
+                'bert-base-cased', )
 
-        self.tokenizer = torch.hub.load('huggingface/pytorch-pretrained-BERT',
-                                        'bertTokenizer', 'bert-base-cased',
-                                        do_basic_tokenize=False)
+        self.tokenizer = BertTokenizer.from_pretrained('bert-base-cased',
+                                                       do_lower_case=False)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
