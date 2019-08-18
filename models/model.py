@@ -5,6 +5,8 @@ import pandas as pd
 import sklearn.metrics
 import torch
 import tqdm
+
+from keras.preprocessing.sequence import pad_sequences
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
     SequentialSampler
 
@@ -153,6 +155,10 @@ class Model:
         texts = [format_fn(sentence) for sentence in texts]
         tokenized_text = [tokenizer.tokenize(t) for t in texts]
         indexed_tokens = [tokenizer.convert_tokens_to_ids(x) for x in tokenized_text]
+        indexed_tokens = pad_sequences(indexed_tokens, maxlen=150, dtype="long",
+                                       padding="post", truncating="post",
+                                       value=tokenizer.convert_tokens_to_ids(
+                                           tokenizer.pad_token))
         indexed_tokens = [torch.tensor(x) for x in indexed_tokens]
 
         tokens_tensor = torch.nn.utils.rnn.pad_sequence(
