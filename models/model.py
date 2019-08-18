@@ -65,20 +65,9 @@ class Model:
 
         train_size = int(0.9 * len(dataset))
         test_size = len(dataset) - train_size
-        train_dataset, test_dataset = torch.utils.data.random_split(
+        train_dev_dataset, test_dataset = torch.utils.data.random_split(
             dataset, [train_size, test_size])
 
-        train_size = int(0.9 * len(train_dataset))
-        validation_size = len(train_dataset) - train_size
-        train_dataset, validation_dataset = torch.utils.data.random_split(
-            train_dataset, [train_size, validation_size])
-
-        train_dataloader = DataLoader(train_dataset,
-                                      sampler=RandomSampler(train_dataset),
-                                      batch_size=BATCH_SIZE)
-        validation_dataloader = DataLoader(validation_dataset,
-                                           sampler=SequentialSampler(validation_dataset),
-                                           batch_size=BATCH_SIZE)
         test_dataloader = DataLoader(test_dataset,
                                      sampler=SequentialSampler(test_dataset),
                                      batch_size=BATCH_SIZE)
@@ -89,6 +78,18 @@ class Model:
         for epoch in range(EPOCHS):
             print("EPOCH {}".format(epoch))
             self.model.train()
+            train_size = int(0.9 * len(train_dev_dataset))
+            validation_size = len(train_dev_dataset) - train_size
+            train_dataset, validation_dataset = torch.utils.data.random_split(
+                train_dev_dataset, [train_size, validation_size])
+
+            train_dataloader = DataLoader(train_dataset,
+                                          sampler=RandomSampler(train_dataset),
+                                          batch_size=BATCH_SIZE)
+            validation_dataloader = DataLoader(validation_dataset,
+                                               sampler=SequentialSampler(
+                                                   validation_dataset),
+                                               batch_size=BATCH_SIZE)
             for step, batch in enumerate(tqdm.tqdm(train_dataloader)):
                 optimizer.zero_grad()
 
