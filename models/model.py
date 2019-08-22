@@ -1,5 +1,6 @@
 from typing import Sequence, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import sklearn.metrics
@@ -29,7 +30,7 @@ class Model:
             self.model = model
         else:
             self.model = BertForSequenceClassification.from_pretrained(
-                'bert-base-cased', )
+                'bert-base-cased', num_labels=2)
 
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-cased',
                                                        do_lower_case=False)
@@ -56,11 +57,11 @@ class Model:
         assert isinstance(head[0], str)
         assert isinstance(head[1], int)
 
-        print("Training with {} samples".format(len(data)))
         df = pd.DataFrame(data=data, columns=[COLUMN_TEXT, COLUMN_LABEL])
+        print("Training with {} samples".format(len(df.index)))
         print(df.head())
 
-        tokens_tensor = self.tokenize_texts(df[COLUMN_TEXT].values)
+        tokens_tensor = self.__tokenize_texts(df[COLUMN_TEXT].values)
         labels_tensor = torch.tensor(df[COLUMN_LABEL].values)
 
         dataset = TensorDataset(tokens_tensor, labels_tensor)
@@ -75,14 +76,11 @@ class Model:
                                      batch_size=BATCH_SIZE)
 
         # optimizer = torch.optim.Adam(self.model.parameters(), lr=2e-5)
-        optimizer = AdamW(self.model.parameters(), lr=1e-3, correct_bias=False)
-        scheduler = WarmupLinearSchedule(optimizer,
-                                         warmup_steps=100,
-                                         t_total=1000)
+        optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
+        train_losses = []
 
         for epoch in range(EPOCHS):
             print("EPOCH {}".format(epoch))
-            self.model.train()
             train_size = int(0.9 * len(train_dev_dataset))
             validation_size = len(train_dev_dataset) - train_size
             train_dataset, validation_dataset = torch.utils.data.random_split(
@@ -95,6 +93,10 @@ class Model:
                                                sampler=SequentialSampler(
                                                    validation_dataset),
                                                batch_size=BATCH_SIZE)
+
+            training_loss = 0
+            training_steps = 0
+            self.model.train()
             for step, batch in enumerate(tqdm.tqdm(train_dataloader)):
                 optimizer.zero_grad()
 
@@ -105,9 +107,12 @@ class Model:
 
                 loss.backward()
                 optimizer.step()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(),
-                                               max_norm=1.0)
-                scheduler.step(epoch=epoch)
+
+                train_losses.append(loss.item())
+                training_loss = loss.item()
+                training_steps += 1
+
+            print("Train loss: {0:.3f}".format(training_loss / training_steps))
 
             self.model.eval()
             validation_accuracy, validation_steps = 0, 0
@@ -123,21 +128,35 @@ class Model:
                     labels.detach().cpu().numpy(),
                     indices.detach().cpu().numpy())
                 validation_steps += 1
-            print("Validation accuracy: {}".format(validation_accuracy / validation_steps))
+
+            print("Validation accuracy: {0:.3f}".format(validation_accuracy / validation_steps))
+
+        fig = plt.figure(figsize=(20, 10))
+        plt.title("Training loss")
+        plt.xlabel("Batch")
+        plt.ylabel("Loss")
+        plt.plot(train_losses)
+        plt.show()
+        fig.savefig("../outputs/losses.png")
+        plt.close(fig)
 
         test_sentences = [t[0] for t in test_dataloader][0].numpy()
         test_labels = [t[1] for t in test_dataloader][0].numpy()
 
-        test_predictions = self.predict_slc(test_sentences)
+        test_predictions = np.array(self.predict_slc(test_sentences))
+        precision, recall, f1_score, _ = \
+            sklearn.metrics.precision_recall_fscore_support(test_labels,
+                                                            test_predictions,
+                                                            average="macro")
+        print("Labels vs Predictions = {} : {}".format(len(test_labels),
+                                                       len(test_predictions)))
         print("Test"
               "\n\taccuracy: {:.6f}"
               "\n\tprecision: {:.6f}"
               "\n\trecall: {:.6f}"
               "\n\tf1: {:.6f}".format(
                                 sklearn.metrics.accuracy_score(test_labels, test_predictions),
-                                sklearn.metrics.precision_score(test_labels, test_predictions),
-                                sklearn.metrics.recall_score(test_labels, test_predictions),
-                                sklearn.metrics.f1_score(test_labels, test_predictions)))
+                                precision, recall, f1_score))
 
         baseline_predictions = np.ones_like(test_labels)
         print("Baseline"
@@ -150,7 +169,7 @@ class Model:
                             sklearn.metrics.recall_score(test_labels, baseline_predictions),
                             sklearn.metrics.f1_score(test_labels, baseline_predictions)))
 
-    def tokenize_texts(self, texts: np.ndarray):
+    def __tokenize_texts(self, texts: np.ndarray):
         tokenizer = self.tokenizer
 
         # wrap with the BERT [CLS] and [SEP] tokens
@@ -177,7 +196,7 @@ class Model:
     def predict_slc(self, sentences: np.ndarray) -> Sequence[int]:
         result = list()
 
-        tokens_tensor = self.tokenize_texts(sentences)
+        tokens_tensor = self.__tokenize_texts(sentences)
         predict_dataset = TensorDataset(tokens_tensor)
         predict_dataloader = DataLoader(predict_dataset,
                                         batch_size=BATCH_SIZE)
@@ -187,9 +206,8 @@ class Model:
             with torch.no_grad():
                 outputs = self.model(batch[0])
                 logits = outputs[0]
-
-            _, indices = torch.max(logits, dim=1)
-            indices = indices.detach().cpu().numpy()
+                _, indices = torch.max(logits, dim=1)
+                indices = indices.detach().cpu().numpy()
             result.extend(indices)
 
         assert len(result) == len(sentences)

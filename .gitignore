@@ -5,6 +5,9 @@ baselines.tgz
 datasets.tgz
 tools.tgz
 
+outputs/
+fetch_results.sh
+
 # User-specific stuff
 .idea/**/workspace.xml
 .idea/**/tasks.xml
