@@ -80,7 +80,7 @@ class Model:
         train_losses = []
 
         for epoch in range(EPOCHS):
-            print("EPOCH {}".format(epoch))
+            print("EPOCH {}/{}".format(epoch+1, EPOCHS))
             train_size = int(0.9 * len(train_dev_dataset))
             validation_size = len(train_dev_dataset) - train_size
             train_dataset, validation_dataset = torch.utils.data.random_split(
@@ -109,8 +109,12 @@ class Model:
                 optimizer.step()
 
                 train_losses.append(loss.item())
-                training_loss = loss.item()
+                training_loss += loss.item()
                 training_steps += 1
+
+                if step % 100 == 0:
+                    print("Train loss at step {step}: {loss:.3f}".format(
+                        step=step, loss=(training_loss / training_steps)))
 
             print("Train loss: {0:.3f}".format(training_loss / training_steps))
 
@@ -140,16 +144,26 @@ class Model:
         fig.savefig("../outputs/losses.png")
         plt.close(fig)
 
-        test_sentences = [t[0] for t in test_dataloader][0].numpy()
-        test_labels = [t[1] for t in test_dataloader][0].numpy()
+        test_labels = []
+        test_predictions = []
+        self.model.eval()
+        for batch in test_dataloader:
+            inputs, labels = tuple(t.to(self.device) for t in batch)
+            with torch.no_grad():
+                outputs = self.model(inputs)
+                logits = outputs[0]
 
-        test_predictions = np.array(self.predict_slc(test_sentences))
+                _, indices = torch.max(logits, dim=1)
+
+            test_predictions.extend(indices.detach().cpu().numpy())
+            test_labels.extend(labels.detach().cpu().numpy())
+
         precision, recall, f1_score, _ = \
             sklearn.metrics.precision_recall_fscore_support(test_labels,
                                                             test_predictions,
                                                             average="macro")
-        print("Labels vs Predictions = {} : {}".format(len(test_labels),
-                                                       len(test_predictions)))
+        print("Test Labels vs Predictions = {} : {}".format(len(test_labels),
+                                                            len(test_predictions)))
         print("Test"
               "\n\taccuracy: {:.6f}"
               "\n\tprecision: {:.6f}"
