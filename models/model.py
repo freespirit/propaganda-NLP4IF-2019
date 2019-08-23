@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import sklearn.metrics
+import time
 import torch
 import tqdm
 
@@ -24,7 +25,7 @@ EPOCHS = 5
 BATCH_SIZE = 32
 
 
-class Model:
+class Model(object):
     def __init__(self, model: torch.nn.Module = None):
         if model is not None:
             self.model = model
@@ -81,6 +82,7 @@ class Model:
 
         for epoch in range(EPOCHS):
             print("EPOCH {}/{}".format(epoch+1, EPOCHS))
+            time_start = time.time()
             train_size = int(0.9 * len(train_dev_dataset))
             validation_size = len(train_dev_dataset) - train_size
             train_dataset, validation_dataset = torch.utils.data.random_split(
@@ -134,6 +136,10 @@ class Model:
                 validation_steps += 1
 
             print("Validation accuracy: {0:.3f}".format(validation_accuracy / validation_steps))
+            time_end = time.time()
+            time_interval = time_end - time_start
+            print("time: {min:.0f}:{sec:.0f}".format(min=time_interval / 60,
+                                                     sec=time_interval % 60))
 
         plt.figure(figsize=(20, 10))
         plt.title("Training loss")
