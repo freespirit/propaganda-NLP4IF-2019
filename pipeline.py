@@ -25,7 +25,7 @@ ARTICLE_LABEL_PATTERN_FLC = "article{:s}.task-FLC.labels"
 ARTICLE_LABEL_PATTERN_SLC = "article{:s}.task-SLC.labels"
 
 TEMPLATE_DEV_SLC = os.path.join(DATASET_DIR, "dev.template-output-SLC.out")
-OUTPUT_SLC_TXT = "dev.slc.txt"
+OUTPUT_SLC_TXT = "outputs/dev.slc.txt"
 
 logging.basicConfig(level=logging.INFO)
 

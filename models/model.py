@@ -140,7 +140,7 @@ class Model:
         plt.xlabel("Batch")
         plt.ylabel("Loss")
         plt.plot(train_losses)
-        plt.savefig("../outputs/losses.png", bbox_inches='tight')
+        plt.savefig("outputs/losses.png", bbox_inches='tight')
         # plt.show()
         # plt.close(fig)
 
