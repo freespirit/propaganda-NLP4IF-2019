@@ -20,7 +20,7 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
 COLUMN_TEXT = "text"
 COLUMN_LABEL = "label"
 
-EPOCHS = 4
+EPOCHS = 5
 BATCH_SIZE = 32
 
 
@@ -76,7 +76,7 @@ class Model:
                                      batch_size=BATCH_SIZE)
 
         # optimizer = torch.optim.Adam(self.model.parameters(), lr=2e-5)
-        optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
+        optimizer = AdamW(self.model.parameters(), lr=1e-5, correct_bias=False)
         train_losses = []
 
         for epoch in range(EPOCHS):
@@ -97,7 +97,7 @@ class Model:
             training_loss = 0
             training_steps = 0
             self.model.train()
-            for step, batch in enumerate(tqdm.tqdm(train_dataloader)):
+            for step, batch in enumerate(train_dataloader):
                 optimizer.zero_grad()
 
                 input_tensor, labels_tensor = tuple(t.to(self.device)
@@ -135,14 +135,14 @@ class Model:
 
             print("Validation accuracy: {0:.3f}".format(validation_accuracy / validation_steps))
 
-        fig = plt.figure(figsize=(20, 10))
+        plt.figure(figsize=(20, 10))
         plt.title("Training loss")
         plt.xlabel("Batch")
         plt.ylabel("Loss")
         plt.plot(train_losses)
-        plt.show()
-        fig.savefig("../outputs/losses.png")
-        plt.close(fig)
+        plt.savefig("../outputs/losses.png", bbox_inches='tight')
+        # plt.show()
+        # plt.close(fig)
 
         test_labels = []
         test_predictions = []
