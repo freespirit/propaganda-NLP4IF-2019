@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from article import Article
+from models.article import Article
 
 
 class DataCleaner:

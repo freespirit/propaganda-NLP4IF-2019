@@ -5,13 +5,13 @@ import tqdm
 
 from typing import Sequence
 
-from article import Article
-from articles_loader import ArticlesLoader
-from cleaner import DataCleaner
-from model import Model
-from preprocessor import DataPreprocessor
+from models.article import Article
+from models.articles_loader import ArticlesLoader
+from models.cleaner import DataCleaner
+from models.model import Model
+from models.preprocessor import DataPreprocessor
 
-DATASET_DIR = "../datasets"
+DATASET_DIR = "datasets"
 PROPAGANDA_MODEL_FILE = "propaganda.model"
 
 TRAIN_DATA_DIR = os.path.join(DATASET_DIR, "train-articles")

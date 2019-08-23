@@ -4,7 +4,7 @@ from typing import Sequence
 import pandas as pd
 import regex as re
 
-from article import Article
+from models.article import Article
 
 
 class ArticlesLoader:

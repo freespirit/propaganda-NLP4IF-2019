@@ -1,6 +1,6 @@
 from typing import Sequence, Tuple
 
-from article import Article
+from models.article import Article
 
 
 LABELS = {"propaganda": 1,
