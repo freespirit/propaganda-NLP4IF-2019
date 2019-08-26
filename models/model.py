@@ -3,6 +3,7 @@ from typing import Sequence, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import sklearn.metrics
 import time
 import torch
@@ -20,6 +21,11 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
 
 COLUMN_TEXT = "text"
 COLUMN_LABEL = "label"
+
+COLUMN_VALUE = 'value'
+COLUMN_METRIC = 'metric'
+METRIC_TRAINING_LOSS = 'Training Loss'
+METRIC_VALIDATION_F1 = 'Validation F1'
 
 EPOCHS = 5
 BATCH_SIZE = 32
@@ -92,8 +98,8 @@ class Model(object):
         adam_args = [{'params': bert_params, 'lr': 5e-6, 'weight_decay': 0.01},
                      {'params': class_params, 'lr': 1e-5}]
         optimizer = AdamW(adam_args, correct_bias=False)
-        train_losses = []
 
+        df_metrics = pd.DataFrame()
         for epoch in range(EPOCHS):
             print("EPOCH {}/{}".format(epoch+1, EPOCHS))
             time_start = time.time()
@@ -110,7 +116,7 @@ class Model(object):
                                                    validation_dataset),
                                                batch_size=BATCH_SIZE)
 
-            training_loss = 0
+            running_loss = 0
             training_steps = 0
             self.model.train()
             for step, batch in enumerate(train_dataloader):
@@ -124,84 +130,70 @@ class Model(object):
                 loss.backward()
                 optimizer.step()
 
-                train_losses.append(loss.item())
-                training_loss += loss.item()
+                running_loss += loss.item()
                 training_steps += 1
-
                 if step % 100 == 0:
                     print("Train loss at step {step}: {loss:.3f}".format(
-                        step=step, loss=(training_loss / training_steps)))
+                        step=step, loss=(running_loss / training_steps)))
+                batch_loss = pd.DataFrame({COLUMN_VALUE: loss.item(),
+                                           COLUMN_METRIC: METRIC_TRAINING_LOSS},
+                                          index=[0])
+                df_metrics = df_metrics.append(batch_loss, ignore_index=True)
 
-            print("Train loss: {0:.3f}".format(training_loss / training_steps))
+            print("Train loss: {0:.3f}".format(running_loss / training_steps))
 
-            self.model.eval()
-            validation_accuracy, validation_steps = 0, 0
-            for step, batch in enumerate(validation_dataloader):
-                inputs, labels = tuple(t.to(self.device) for t in batch)
-                with torch.no_grad():
-                    outputs = self.model(inputs)
-                    logits = outputs[0]
+            _, (_, _, f1_score) = self.__eval(validation_dataloader, 'Validation')
 
-                    _, indices = torch.max(logits, dim=1)
+            validation_f1 = pd.DataFrame({COLUMN_VALUE: f1_score,
+                                          COLUMN_METRIC: METRIC_VALIDATION_F1},
+                                         index=[0])
+            df_metrics = df_metrics.append(validation_f1, ignore_index=True)
 
-                validation_accuracy += sklearn.metrics.accuracy_score(
-                    labels.detach().cpu().numpy(),
-                    indices.detach().cpu().numpy())
-                validation_steps += 1
-
-            print("Validation accuracy: {0:.3f}".format(validation_accuracy / validation_steps))
             time_end = time.time()
             time_interval = time_end - time_start
             print("time: {min:.0f}:{sec:.0f}".format(min=time_interval / 60,
                                                      sec=time_interval % 60))
 
         plt.figure(figsize=(20, 10))
-        plt.title("Training loss")
+        plt.title("Training metrics")
         plt.xlabel("Batch")
-        plt.ylabel("Loss")
-        plt.plot(train_losses)
-        plt.savefig("outputs/losses.png", bbox_inches='tight')
-        # plt.show()
-        # plt.close(fig)
+        sns.lineplot(x=df_metrics.index, y=COLUMN_VALUE,
+                     data=df_metrics, hue=COLUMN_METRIC)
+        plt.savefig("outputs/metrics.png", bbox_inches='tight')
 
-        test_labels = []
-        test_predictions = []
+        (test_labels, _), _ = self.__eval(test_dataloader, 'Test')
+
+    def __eval(self, dataloader, title='Evaluation results:'):
+        labels = []
+        predictions = []
         self.model.eval()
-        for batch in test_dataloader:
-            inputs, labels = tuple(t.to(self.device) for t in batch)
+        for batch in dataloader:
+            batch_inputs, batch_labels = tuple(t.to(self.device) for t in batch)
             with torch.no_grad():
-                outputs = self.model(inputs)
+                outputs = self.model(batch_inputs)
                 logits = outputs[0]
 
                 _, indices = torch.max(logits, dim=1)
 
-            test_predictions.extend(indices.detach().cpu().numpy())
-            test_labels.extend(labels.detach().cpu().numpy())
+            predictions.extend(indices.detach().cpu().numpy())
+            labels.extend(batch_labels.detach().cpu().numpy())
 
         precision, recall, f1_score, _ = \
-            sklearn.metrics.precision_recall_fscore_support(test_labels,
-                                                            test_predictions,
+            sklearn.metrics.precision_recall_fscore_support(labels,
+                                                            predictions,
                                                             average="macro")
-        print("Test Labels vs Predictions = {} : {}".format(len(test_labels),
-                                                            len(test_predictions)))
-        print("Test"
+        print("Labels vs Predictions = {} : {}".format(len(labels),
+                                                       len(predictions)))
+        print("{}"
               "\n\taccuracy: {:.6f}"
               "\n\tprecision: {:.6f}"
               "\n\trecall: {:.6f}"
               "\n\tf1: {:.6f}".format(
-                                sklearn.metrics.accuracy_score(test_labels, test_predictions),
-                                precision, recall, f1_score))
+                title,
+                sklearn.metrics.accuracy_score(labels, predictions),
+                precision, recall, f1_score))
 
-        baseline_predictions = np.ones_like(test_labels)
-        print("Baseline"
-              "\n\taccuracy: {:.6f}"
-              "\n\tprecision: {:.6f}"
-              "\n\trecall: {:.6f}"
-              "\n\tf1: {:.6f}".format(
-                            sklearn.metrics.accuracy_score(test_labels, baseline_predictions),
-                            sklearn.metrics.precision_score(test_labels, baseline_predictions),
-                            sklearn.metrics.recall_score(test_labels, baseline_predictions),
-                            sklearn.metrics.f1_score(test_labels, baseline_predictions)))
+        return (labels, predictions), (precision, recall, f1_score)
 
     def __tokenize_texts(self, texts: np.ndarray):
         tokenizer = self.tokenizer
