@@ -37,6 +37,11 @@ class Model(object):
                                                        do_lower_case=False)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if torch.cuda.device_count() > 1:
+            print("Found", torch.cuda.device_count(), "GPUs!")
+            self.model = torch.nn.DataParallel(model)
+
         self.model.to(self.device)
         print("Device used: {}".format(self.device))
 
@@ -77,7 +82,16 @@ class Model(object):
                                      batch_size=BATCH_SIZE)
 
         # optimizer = torch.optim.Adam(self.model.parameters(), lr=2e-5)
-        optimizer = AdamW(self.model.parameters(), lr=1e-5, correct_bias=False)
+        bert_params = [parameter for name, parameter
+                       in self.model.named_parameters()
+                       if name.startswith("bert") and not name.startswith("bert.embeddings")]
+        class_params = [parameter for name, parameter
+                        in self.model.named_parameters()
+                        if not name.startswith("bert")]
+
+        adam_args = [{'params': bert_params, 'lr': 5e-6, 'weight_decay': 0.01},
+                     {'params': class_params, 'lr': 1e-5}]
+        optimizer = AdamW(adam_args, correct_bias=False)
         train_losses = []
 
         for epoch in range(EPOCHS):

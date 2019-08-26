@@ -6,7 +6,8 @@ datasets.tgz
 tools.tgz
 
 outputs/
-fetch_results.sh
+pull_results.sh
+push_models.sh
 
 # User-specific stuff
 .idea/**/workspace.xml
