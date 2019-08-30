@@ -20,6 +20,8 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
     SequentialSampler
 
 
+MAX_SEQUENCE_LEN = 128
+
 COLUMN_TEXT = "text"
 COLUMN_LABEL = "label"
 
@@ -252,22 +254,32 @@ class Model(object):
     def __tokenize_texts(self, texts: np.ndarray):
         tokenizer = self.tokenizer
 
+        def truncate(sentence: Sequence[str], max_len: int):
+            if len(sentence) > max_len:
+                while len(sentence) > max_len:
+                    sentence.pop()
+            return sentence
+        
         # wrap with the BERT [CLS] and [SEP] tokens
-        def format_fn(sentence: Sequence[str]) -> Sequence[str]:
-            return "{} {} {}".format(
-                tokenizer.cls_token, sentence, tokenizer.sep_token)
+        def wrap(sentence: Sequence[str]) -> Sequence[str]:
+            return [tokenizer.cls_token] + sentence + [tokenizer.sep_token]
 
-        texts = [format_fn(sentence) for sentence in texts]
-        tokenized_text = [tokenizer.tokenize(t) for t in texts]
-        indexed_tokens = [tokenizer.convert_tokens_to_ids(x) for x in tokenized_text]
-        indexed_tokens = pad_sequences(indexed_tokens, maxlen=150, dtype="long",
+        tokenized_texts = [tokenizer.tokenize(t) for t in texts]
+        tokenized_texts = [truncate(sentence, MAX_SEQUENCE_LEN - 2)
+                           for sentence in tokenized_texts]
+        tokenized_texts = [wrap(sentence) for sentence in tokenized_texts]
+
+        indexed_tokens = [tokenizer.convert_tokens_to_ids(tokens)
+                          for tokens in tokenized_texts]
+        indexed_tokens = pad_sequences(indexed_tokens, maxlen=MAX_SEQUENCE_LEN,
+                                       dtype="long",
                                        padding="post", truncating="post",
                                        value=tokenizer.convert_tokens_to_ids(
                                            tokenizer.pad_token))
-        indexed_tokens = [torch.tensor(x) for x in indexed_tokens]
+        indexed_tensors = [torch.tensor(x) for x in indexed_tokens]
 
         tokens_tensor = torch.nn.utils.rnn.pad_sequence(
-            indexed_tokens,
+            indexed_tensors,
             batch_first=True,
             padding_value=tokenizer.convert_tokens_to_ids(tokenizer.pad_token))
 
