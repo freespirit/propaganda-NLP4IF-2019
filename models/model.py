@@ -1,3 +1,4 @@
+from sklearn.utils import deprecated
 from typing import Sequence, Tuple
 
 import matplotlib.pyplot as plt
@@ -27,7 +28,10 @@ COLUMN_METRIC = 'metric'
 METRIC_TRAINING_LOSS = 'Training Loss'
 METRIC_VALIDATION_F1 = 'Validation F1'
 
-EPOCHS = 5
+TRAIN_TEST_DATA_RATIO = 0.95
+TRAIN_DEV_DATA_RATIO = 0.95
+
+EPOCHS = 4
 BATCH_SIZE = 32
 
 
@@ -78,7 +82,7 @@ class Model(object):
 
         dataset = TensorDataset(tokens_tensor, labels_tensor)
 
-        train_size = int(0.9 * len(dataset))
+        train_size = int(TRAIN_TEST_DATA_RATIO * len(dataset))
         test_size = len(dataset) - train_size
         train_dev_dataset, test_dataset = torch.utils.data.random_split(
             dataset, [train_size, test_size])
@@ -87,23 +91,15 @@ class Model(object):
                                      sampler=SequentialSampler(test_dataset),
                                      batch_size=BATCH_SIZE)
 
-        # optimizer = torch.optim.Adam(self.model.parameters(), lr=2e-5)
-        bert_params = [parameter for name, parameter
-                       in self.model.named_parameters()
-                       if name.startswith("bert") and not name.startswith("bert.embeddings")]
-        class_params = [parameter for name, parameter
-                        in self.model.named_parameters()
-                        if not name.startswith("bert")]
-
-        adam_args = [{'params': bert_params, 'lr': 5e-6, 'weight_decay': 0.01},
-                     {'params': class_params, 'lr': 1e-5}]
-        optimizer = AdamW(adam_args, correct_bias=False)
+        # adam_args = self.make_params_dict()
+        adam_args = self.make_recommended_params()
+        optimizer = AdamW(adam_args, lr=2e-5, correct_bias=False)
 
         df_metrics = pd.DataFrame()
         for epoch in range(EPOCHS):
             print("EPOCH {}/{}".format(epoch+1, EPOCHS))
             time_start = time.time()
-            train_size = int(0.9 * len(train_dev_dataset))
+            train_size = int(TRAIN_DEV_DATA_RATIO * len(train_dev_dataset))
             validation_size = len(train_dev_dataset) - train_size
             train_dataset, validation_dataset = torch.utils.data.random_split(
                 train_dev_dataset, [train_size, validation_size])
@@ -151,8 +147,8 @@ class Model(object):
 
             time_end = time.time()
             time_interval = time_end - time_start
-            print("time: {min:.0f}:{sec:.0f}".format(min=time_interval / 60,
-                                                     sec=time_interval % 60))
+            print("time: {min:02.0f}:{sec:02.0f}".format(min=time_interval / 60,
+                                                       sec=time_interval % 60))
 
         plt.figure(figsize=(20, 10))
         plt.title("Training metrics")
@@ -162,6 +158,64 @@ class Model(object):
         plt.savefig("outputs/metrics.png", bbox_inches='tight')
 
         (test_labels, _), _ = self.__eval(test_dataloader, 'Test')
+
+    def make_recommended_params(self):
+        parameters = list(self.model.named_parameters())
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        return [
+            {'params': [param for name, param in parameters
+                        if not any(nd in name for nd in no_decay)],
+             'weight_decay': 0.01},
+            {'params': [param for name, param in parameters
+                        if any(nd in name for nd in no_decay)],
+             'weight_decay': 0.0}]
+
+    @deprecated("This is not currently used but may be worth "
+                "leaving it here for experiments. "
+                "Use `make_recommended_params` instead")
+    def make_params_dict(self):
+        named_parameters = self.model.named_parameters()
+
+        params_encoder_layer_11_10 = [parameter for name, parameter
+                                      in list(named_parameters)
+                                      if name.startswith("bert.encoder.layer.11")
+                                      or name.startswith("bert.encoder.layer.10")]
+
+        params_encoder_layer_9_8_7 = [parameter for name, parameter
+                                      in list(named_parameters)
+                                      if name.startswith("bert.encoder.layer.9")
+                                      or name.startswith("bert.encoder.layer.8")
+                                      or name.startswith("bert.encoder.layer.7")]
+
+        params_middle_layers = [parameter for name, parameter
+                                in list(named_parameters)
+                                if name.startswith("bert.encoder.layer.6")
+                                or name.startswith("bert.encoder.layer.5")
+                                or name.startswith("bert.encoder.layer.4")
+                                or name.startswith("bert.encoder.layer.3")
+                                or name.startswith("bert.encoder.layer.2")]
+
+        params_base_layers = [parameter for name, parameter
+                              in list(named_parameters)
+                              if name.startswith("bert.encoder.layer.1")
+                              or name.startswith("bert.embeddings")]
+
+        # params_embeddings = [parameter for name, parameter
+        #                      in named_parameters
+        #                      if name.startswith("bert.embeddings")]
+
+        class_params = [parameter for name, parameter
+                        in list(named_parameters)
+                        if name.startswith("classifier")]
+
+        return [
+            {'params': params_encoder_layer_11_10, 'lr': 1e-5},
+            {'params': params_encoder_layer_9_8_7, 'lr': 5e-6},
+            # {'params': params_base_layers, 'lr': 1e-6, 'weight_decay': 0.001},
+            # {'params': params_embeddings, 'lr': 1e-7, 'weight_decay': 0.00001},
+            {'params': params_middle_layers, 'lr': 1e-6},
+            {'params': params_base_layers, 'lr': 1e-7},
+            {'params': class_params, 'lr': 2e-5}]
 
     def __eval(self, dataloader, title='Evaluation results:'):
         labels = []
