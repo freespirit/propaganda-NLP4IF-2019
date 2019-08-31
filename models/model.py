@@ -18,6 +18,7 @@ from pytorch_transformers import AdamW, WarmupLinearSchedule
 
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
     SequentialSampler
+from torch.utils.tensorboard import SummaryWriter
 
 
 MAX_SEQUENCE_LEN = 128
@@ -57,6 +58,8 @@ class Model(object):
         self.model.to(self.device)
         print("Device used: {}".format(self.device))
 
+        self.tb_writer = SummaryWriter()
+
     @staticmethod
     def load(file_from) -> 'Model':
         # TODO actually load anything from the file, if recognized
@@ -66,6 +69,7 @@ class Model(object):
     def save(model: 'Model', file_to):
         pass
 
+    # noinspection PyTypeChecker
     def train_slc(self, data: Sequence[Tuple[str, int]]):
         """ Trains a model to recognize propaganda sentences
 
@@ -84,10 +88,10 @@ class Model(object):
 
         dataset = TensorDataset(tokens_tensor, labels_tensor)
 
-        train_size = int(TRAIN_TEST_DATA_RATIO * len(dataset))
-        test_size = len(dataset) - train_size
+        train_set_size = int(TRAIN_TEST_DATA_RATIO * len(dataset))
+        test_set_size = len(dataset) - train_set_size
         train_dev_dataset, test_dataset = torch.utils.data.random_split(
-            dataset, [train_size, test_size])
+            dataset, [train_set_size, test_set_size])
 
         test_dataloader = DataLoader(test_dataset,
                                      sampler=SequentialSampler(test_dataset),
@@ -101,10 +105,10 @@ class Model(object):
         for epoch in range(EPOCHS):
             print("EPOCH {}/{}".format(epoch+1, EPOCHS))
             time_start = time.time()
-            train_size = int(TRAIN_DEV_DATA_RATIO * len(train_dev_dataset))
-            validation_size = len(train_dev_dataset) - train_size
+            train_set_size = int(TRAIN_DEV_DATA_RATIO * len(train_dev_dataset))
+            validation_size = len(train_dev_dataset) - train_set_size
             train_dataset, validation_dataset = torch.utils.data.random_split(
-                train_dev_dataset, [train_size, validation_size])
+                train_dev_dataset, [train_set_size, validation_size])
 
             train_dataloader = DataLoader(train_dataset,
                                           sampler=RandomSampler(train_dataset),
@@ -137,15 +141,21 @@ class Model(object):
                                            COLUMN_METRIC: METRIC_TRAINING_LOSS},
                                           index=[0])
                 df_metrics = df_metrics.append(batch_loss, ignore_index=True)
+                self.tb_writer.add_scalar("Batch loss", loss.item(), step + epoch*len(train_dataset))
 
             print("Train loss: {0:.3f}".format(running_loss / training_steps))
 
-            _, (_, _, f1_score) = self.__eval(validation_dataloader, 'Validation')
+            _, (precision, recall, f1_score) = self.__eval(validation_dataloader, 'Validation')
 
             validation_f1 = pd.DataFrame({COLUMN_VALUE: f1_score,
                                           COLUMN_METRIC: METRIC_VALIDATION_F1},
                                          index=[0])
             df_metrics = df_metrics.append(validation_f1, ignore_index=True)
+            self.tb_writer.add_scalars("Validation metrics",
+                                       {"precision": precision,
+                                        "recall": recall,
+                                        "f1_score": f1_score},
+                                       epoch)
 
             time_end = time.time()
             time_interval = time_end - time_start
