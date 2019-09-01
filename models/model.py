@@ -109,6 +109,8 @@ class Model(object):
         scheduler = WarmupConstantSchedule(optimizer, warmup_train_steps)
 
         df_metrics = pd.DataFrame()
+
+        writer_step = 0
         for epoch in range(EPOCHS):
             print("EPOCH {}/{}".format(epoch+1, EPOCHS))
             time_start = time.time()
@@ -149,7 +151,8 @@ class Model(object):
                                            COLUMN_METRIC: METRIC_TRAINING_LOSS},
                                           index=[0])
                 df_metrics = df_metrics.append(batch_loss, ignore_index=True)
-                self.tb_writer.add_scalar("Batch loss", loss.item(), step + epoch*len(train_dataset))
+                self.tb_writer.add_scalar("Batch loss", loss.item(), writer_step)
+                writer_step += 1
 
             print("Train loss: {0:.3f}".format(running_loss / training_steps))
 
@@ -177,7 +180,13 @@ class Model(object):
                      data=df_metrics, hue=COLUMN_METRIC)
         plt.savefig("outputs/metrics.png", bbox_inches='tight')
 
-        (test_labels, _), _ = self.__eval(test_dataloader, 'Test')
+        (test_labels, _), (precision, recall, f1_score) =\
+            self.__eval(test_dataloader, 'Test')
+
+        self.tb_writer.add_scalars("Test metrics",
+                                   {"test_precision": precision,
+                                    "test_recall": recall,
+                                    "test_f1_score": f1_score})
 
     def make_recommended_params(self):
         parameters = list(self.model.named_parameters())
