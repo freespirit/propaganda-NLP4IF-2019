@@ -12,9 +12,11 @@ import tqdm
 
 from keras.preprocessing.sequence import pad_sequences
 
-from pytorch_transformers import BertTokenizer, BertModel,\
-    BertForSequenceClassification
-from pytorch_transformers import AdamW, WarmupLinearSchedule
+from pytorch_transformers import\
+    BertTokenizer, BertModel, BertForSequenceClassification
+
+from pytorch_transformers import AdamW,\
+    WarmupLinearSchedule, WarmupConstantSchedule, WarmupCosineSchedule
 
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
     SequentialSampler
@@ -97,9 +99,14 @@ class Model(object):
                                      sampler=SequentialSampler(test_dataset),
                                      batch_size=BATCH_SIZE)
 
+        total_train_steps = int(EPOCHS
+                                * len(train_dev_dataset)
+                                * TRAIN_DEV_DATA_RATIO)
+        warmup_train_steps = total_train_steps * 0.2
         # adam_args = self.make_params_dict()
         adam_args = self.make_recommended_params()
         optimizer = AdamW(adam_args, lr=2e-5, correct_bias=False)
+        scheduler = WarmupConstantSchedule(optimizer, warmup_train_steps)
 
         df_metrics = pd.DataFrame()
         for epoch in range(EPOCHS):
@@ -131,6 +138,7 @@ class Model(object):
 
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
 
                 running_loss += loss.item()
                 training_steps += 1
@@ -174,6 +182,8 @@ class Model(object):
     def make_recommended_params(self):
         parameters = list(self.model.named_parameters())
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        no_decay = ['bias', 'gamma', 'beta'] #see mccormickml blog
+        no_decay = ['bias', 'gamma', 'beta', 'LayerNorm.bias', 'LayerNorm.weight']
         return [
             {'params': [param for name, param in parameters
                         if not any(nd in name for nd in no_decay)],
