@@ -27,16 +27,17 @@ ARTICLE_LABEL_PATTERN_SLC = "article{:s}.task-SLC.labels"
 
 TEMPLATE_DEV_SLC = os.path.join(DATASET_DIR, "dev.template-output-SLC.out")
 TEMPLATE_TEST_SLC = os.path.join(DATASET_DIR, "test.template-output-SLC.out")
-OUTPUT_SLC_TXT = "outputs/dev.slc.txt"
+OUTPUT_SLC_TXT_DEV = "outputs/dev.slc.txt"
 OUTPUT_SLC_TXT_TEST = "outputs/test.slc.txt"
 
 logging.basicConfig(level=logging.INFO)
 
 
-def save_slc_predictions(articles: Sequence[Article]):
-    output = pd.read_csv(TEMPLATE_DEV_SLC, sep="\t", names=["article_id",
-                                                            "sentence_id",
-                                                            "label"])
+def save_slc_predictions(articles: Sequence[Article],
+                         template_slc_file, output_file):
+    output = pd.read_csv(template_slc_file, sep="\t", names=["article_id",
+                                                             "sentence_id",
+                                                             "label"])
     for article in articles:
         article_id = int(article.article_id)
         labels = map(lambda p: DataPreprocessor.int_to_label(p),
@@ -47,7 +48,7 @@ def save_slc_predictions(articles: Sequence[Article]):
             output.loc[mask, "label"] = prediction
 
     output.to_csv(sep="\t", header=False, index=False,
-                  path_or_buf=OUTPUT_SLC_TXT)
+                  path_or_buf=output_file)
 
 
 if __name__ == "__main__":
@@ -78,7 +79,7 @@ if __name__ == "__main__":
         predictions = model.predict_slc(sentences)
         article.set_slc_labels(predictions)
 
-    save_slc_predictions(test_articles)
+    save_slc_predictions(test_articles, TEMPLATE_TEST_SLC, OUTPUT_SLC_TXT_TEST)
 
     # predictions = eval_model.predict_flc(dev_articles)
     # save_flc_predictions(predictions)
