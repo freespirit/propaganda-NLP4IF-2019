@@ -104,10 +104,6 @@ class Model(object):
         train_dev_dataset, test_dataset = torch.utils.data.random_split(
             dataset, [train_set_size, test_set_size])
 
-        test_dataloader = DataLoader(test_dataset,
-                                     sampler=SequentialSampler(test_dataset),
-                                     batch_size=BATCH_SIZE)
-
         total_train_steps = int(EPOCHS
                                 * len(train_dev_dataset) / BATCH_SIZE
                                 * TRAIN_DEV_DATA_RATIO)
@@ -118,7 +114,7 @@ class Model(object):
 
         df_metrics = pd.DataFrame()
 
-        writer_step = 0
+        iteration = 0
         for epoch in range(EPOCHS):
             print("EPOCH {}/{}".format(epoch+1, EPOCHS))
             time_start = time.time()
@@ -130,19 +126,13 @@ class Model(object):
             train_dataloader = DataLoader(train_dataset,
                                           sampler=RandomSampler(train_dataset),
                                           batch_size=BATCH_SIZE)
-            validation_dataloader = DataLoader(validation_dataset,
-                                               sampler=SequentialSampler(
-                                                   validation_dataset),
-                                               batch_size=BATCH_SIZE)
 
             running_loss = 0
-            training_steps = 0
             self.model.train()
             for step, batch in enumerate(train_dataloader):
                 optimizer.zero_grad()
 
-                input_tensor, labels_tensor = tuple(t.to(self.device)
-                                                    for t in batch)
+                input_tensor, labels_tensor = tuple(t.to(self.device) for t in batch)
                 outputs = self.model(input_tensor, labels=labels_tensor)
                 loss = outputs[0]
 
@@ -151,50 +141,27 @@ class Model(object):
                 scheduler.step()
 
                 running_loss += loss.item()
-                training_steps += 1
-                if step % 100 == 0:
-                    print("Train loss at step {step}: {loss:.3f}".format(
-                        step=step, loss=(running_loss / training_steps)))
+                self.__report_training_loss(loss.item(), running_loss, step + 1, iteration)
+                iteration += 1
+
                 batch_loss = pd.DataFrame({COLUMN_VALUE: loss.item(),
                                            COLUMN_METRIC: METRIC_TRAINING_LOSS},
                                           index=[0])
                 df_metrics = df_metrics.append(batch_loss, ignore_index=True)
-                self.tb_writer.add_scalar("Batch loss", loss.item(), writer_step)
-                writer_step += 1
 
-            print("Train loss: {0:.3f}".format(running_loss / training_steps))
-
-            _, (precision, recall, f1_score) = self.__eval(validation_dataloader, 'Validation')
-
+            f1_score = self.__report_validation_metrics(epoch, validation_dataset)
             validation_f1 = pd.DataFrame({COLUMN_VALUE: f1_score,
                                           COLUMN_METRIC: METRIC_VALIDATION_F1},
                                          index=[0])
             df_metrics = df_metrics.append(validation_f1, ignore_index=True)
-            self.tb_writer.add_scalars("Validation metrics",
-                                       {"precision": precision,
-                                        "recall": recall,
-                                        "f1_score": f1_score},
-                                       epoch)
 
             time_end = time.time()
             time_interval = time_end - time_start
             print("time: {min:02.0f}:{sec:02.0f}".format(min=time_interval / 60,
-                                                       sec=time_interval % 60))
+                                                         sec=time_interval % 60))
 
-        plt.figure(figsize=(20, 10))
-        plt.title("Training metrics")
-        plt.xlabel("Batch")
-        sns.lineplot(x=df_metrics.index, y=COLUMN_VALUE,
-                     data=df_metrics, hue=COLUMN_METRIC)
-        plt.savefig("outputs/metrics.png", bbox_inches='tight')
-
-        (test_labels, _), (precision, recall, f1_score) =\
-            self.__eval(test_dataloader, 'Test')
-
-        self.tb_writer.add_scalars("Test metrics",
-                                   {"test_precision": precision,
-                                    "test_recall": recall,
-                                    "test_f1_score": f1_score})
+        self.__plot_validation_metrics(df_metrics)
+        self.__report_test_results(test_dataset)
 
     def make_recommended_params(self):
         parameters = list(self.model.named_parameters())
@@ -282,9 +249,9 @@ class Model(object):
               "\n\tprecision: {:.6f}"
               "\n\trecall: {:.6f}"
               "\n\tf1: {:.6f}".format(
-                title,
-                sklearn.metrics.accuracy_score(labels, predictions),
-                precision, recall, f1_score))
+            title,
+            sklearn.metrics.accuracy_score(labels, predictions),
+            precision, recall, f1_score))
 
         return (labels, predictions), (precision, recall, f1_score)
 
@@ -296,7 +263,7 @@ class Model(object):
                 while len(sentence) > max_len:
                     sentence.pop()
             return sentence
-        
+
         # wrap with the BERT [CLS] and [SEP] tokens
         def wrap(sentence: Sequence[str]) -> Sequence[str]:
             return [tokenizer.cls_token] + sentence + [tokenizer.sep_token]
@@ -322,6 +289,49 @@ class Model(object):
 
         return tokens_tensor
 
+    def __report_training_loss(self, loss, running_loss, epoch_step, iteration):
+        self.tb_writer.add_scalar("Batch loss", loss, iteration)
+
+        if epoch_step % 100 == 0:
+            print("Train loss at step {step}: {loss:.3f}".format(
+                step=epoch_step, loss=(running_loss / epoch_step)))
+
+    def __report_validation_metrics(self, epoch, validation_dataset):
+        validation_dataloader = DataLoader(validation_dataset,
+                                           sampler=SequentialSampler(
+                                               validation_dataset),
+                                           batch_size=BATCH_SIZE)
+        _, (precision, recall, f1_score) = self.__eval(validation_dataloader,
+                                                       'Validation')
+        self.tb_writer.add_scalars("Validation metrics",
+                                   {"precision": precision,
+                                    "recall": recall,
+                                    "f1_score": f1_score},
+                                   epoch)
+        return f1_score
+
+    @staticmethod
+    def __plot_validation_metrics(df_metrics):
+        plt.figure(figsize=(20, 10))
+        plt.title("Training metrics")
+        plt.xlabel("Batch")
+        sns.lineplot(x=df_metrics.index, y=COLUMN_VALUE,
+                     data=df_metrics, hue=COLUMN_METRIC)
+        plt.savefig("outputs/metrics.png", bbox_inches='tight')
+
+    def __report_test_results(self, test_dataset):
+        test_dataloader = DataLoader(test_dataset,
+                                     sampler=SequentialSampler(test_dataset),
+                                     batch_size=BATCH_SIZE)
+        (test_labels, _), (precision, recall, f1_score) = \
+            self.__eval(test_dataloader, 'Test')
+
+        self.tb_writer.add_scalars("Test metrics",
+                                   {"precision": precision,
+                                    "recall": recall,
+                                    "f1_score": f1_score},
+                                   0)
+
     def predict_slc(self, sentences: np.ndarray) -> Sequence[int]:
         result = list()
 
@@ -342,6 +352,5 @@ class Model(object):
         assert len(result) == len(sentences)
 
         return result
-
     def predict_flc(self, articles):
         return [article for article in articles]
