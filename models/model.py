@@ -26,7 +26,7 @@ BERT_BASE_CASED = 'bert-base-cased'
 BERT_BASE_UNCASED = 'bert-base-uncased'
 BERT_LARGE_CASED = 'bert-large-cased'
 BERT_LARGE_UNCASED = 'bert-large-uncased'
-BERT_VARIANT = BERT_LARGE_UNCASED
+BERT_VARIANT = BERT_BASE_UNCASED
 
 MAX_SEQUENCE_LEN = 128
 
@@ -41,27 +41,33 @@ METRIC_VALIDATION_F1 = 'Validation F1'
 TRAIN_TEST_DATA_RATIO = 0.95
 TRAIN_DEV_DATA_RATIO = 0.95
 
-EPOCHS = 4
-BATCH_SIZE = 20
+EPOCHS = 3
+BATCH_SIZE = 32
+LR_BASE = 4e-6
+LR_LARGE = 3e-6
 
 
 class Model(object):
     def __init__(self):
+        do_lower_case = BERT_VARIANT is BERT_BASE_UNCASED \
+                        or BERT_VARIANT is BERT_LARGE_UNCASED
+
         self.model = BertForSequenceClassification.from_pretrained(
             BERT_VARIANT, num_labels=2)
-
-        do_lower_case = BERT_VARIANT is BERT_BASE_UNCASED
         self.tokenizer = BertTokenizer.from_pretrained(BERT_VARIANT,
                                                        do_lower_case=do_lower_case)
-
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         if torch.cuda.device_count() > 1:
             print("Found", torch.cuda.device_count(), "GPUs!")
             self.model = torch.nn.DataParallel(self.model)
-
         self.model.to(self.device)
         print("Device used: {}".format(self.device))
+
+        self.learning_rate = 1e-3
+        if BERT_VARIANT is BERT_BASE_UNCASED or BERT_VARIANT is BERT_BASE_CASED:
+            self.learning_rate = LR_BASE
+        else:
+            self.learning_rate = LR_LARGE
 
         self.tb_writer = SummaryWriter()
 
@@ -106,9 +112,8 @@ class Model(object):
                                 * len(train_dev_dataset) / BATCH_SIZE
                                 * TRAIN_DEV_DATA_RATIO)
         warmup_train_steps = total_train_steps * 0.2
-        # adam_args = self.make_params_dict()
         adam_args = self.make_recommended_params()
-        optimizer = AdamW(adam_args, lr=1e-4, correct_bias=False)
+        optimizer = AdamW(adam_args, lr=self.learning_rate, correct_bias=False)
         scheduler = WarmupConstantSchedule(optimizer, warmup_train_steps)
 
         df_metrics = pd.DataFrame()
