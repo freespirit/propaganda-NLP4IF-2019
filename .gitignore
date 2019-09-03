@@ -8,6 +8,7 @@ tools.tgz
 outputs/
 pull_results.sh
 push_models.sh
+runs/
 
 # User-specific stuff
 .idea/**/workspace.xml
