@@ -1,7 +1,6 @@
 from sklearn.utils import deprecated
 from typing import Sequence, Tuple
 
-import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -42,7 +41,7 @@ METRIC_VALIDATION_F1 = 'Validation F1'
 TRAIN_TEST_DATA_RATIO = 0.95
 TRAIN_DEV_DATA_RATIO = 0.95
 
-EPOCHS = 3
+EPOCHS = 4
 BATCH_SIZE = 20
 
 
@@ -51,7 +50,7 @@ class Model(object):
         self.model = BertForSequenceClassification.from_pretrained(
             BERT_VARIANT, num_labels=2)
 
-        do_lower_case = BERT_VARIANT is (BERT_BASE_UNCASED or BERT_LARGE_UNCASED)
+        do_lower_case = BERT_VARIANT is BERT_BASE_UNCASED
         self.tokenizer = BertTokenizer.from_pretrained(BERT_VARIANT,
                                                        do_lower_case=do_lower_case)
 
@@ -99,27 +98,22 @@ class Model(object):
         train_dev_dataset, test_dataset = torch.utils.data.random_split(
             dataset, [train_set_size, test_set_size])
 
+        test_dataloader = DataLoader(test_dataset,
+                                     sampler=SequentialSampler(test_dataset),
+                                     batch_size=BATCH_SIZE)
+
         total_train_steps = int(EPOCHS
-                                * (len(train_dev_dataset) / BATCH_SIZE) # !!! note the ` / BATCH_SIZE` - the dataset's length is for each item, not for each batch!!!
+                                * len(train_dev_dataset)
                                 * TRAIN_DEV_DATA_RATIO)
         warmup_train_steps = total_train_steps * 0.2
         # adam_args = self.make_params_dict()
         adam_args = self.make_recommended_params()
-        optimizer = AdamW(adam_args, lr=1e-7, correct_bias=False)
-        # scheduler = WarmupConstantSchedule(optimizer, warmup_train_steps)
-        lr_lambda = lambda x: math.exp(x
-                                       * math.log(2e-4 / 1e-7)
-                                       / total_train_steps)
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        optimizer = AdamW(adam_args, lr=1e-4, correct_bias=False)
+        scheduler = WarmupConstantSchedule(optimizer, warmup_train_steps)
 
         df_metrics = pd.DataFrame()
 
         writer_step = 0
-        iter = 0
-        lr_find_loss = []
-        lr_find_lr = []
-        smoothing = 0.05
-
         for epoch in range(EPOCHS):
             print("EPOCH {}/{}".format(epoch+1, EPOCHS))
             time_start = time.time()
@@ -151,15 +145,6 @@ class Model(object):
                 optimizer.step()
                 scheduler.step()
 
-                lr_step = optimizer.state_dict()["param_groups"][0]["lr"]
-                lr_find_lr.append(lr_step)
-                if iter == 0:
-                    lr_find_loss.append(loss)
-                else:
-                    loss = smoothing * loss + (1 - smoothing) * lr_find_loss[-1]
-                    lr_find_loss.append(loss)
-                iter += 1
-
                 running_loss += loss.item()
                 training_steps += 1
                 if step % 100 == 0:
@@ -181,8 +166,10 @@ class Model(object):
                                          index=[0])
             df_metrics = df_metrics.append(validation_f1, ignore_index=True)
             self.tb_writer.add_scalars("Validation metrics",
-                                       {"precision": precision, "recall": recall, "f1_score": f1_score},
-                                       epoch+1)
+                                       {"precision": precision,
+                                        "recall": recall,
+                                        "f1_score": f1_score},
+                                       epoch)
 
             time_end = time.time()
             time_interval = time_end - time_start
@@ -196,10 +183,6 @@ class Model(object):
                      data=df_metrics, hue=COLUMN_METRIC)
         plt.savefig("outputs/metrics.png", bbox_inches='tight')
 
-        test_dataloader = DataLoader(test_dataset,
-                                     sampler=SequentialSampler(test_dataset),
-                                     batch_size=BATCH_SIZE)
-
         (test_labels, _), (precision, recall, f1_score) =\
             self.__eval(test_dataloader, 'Test')
 
@@ -207,26 +190,6 @@ class Model(object):
                                    {"test_precision": precision,
                                     "test_recall": recall,
                                     "test_f1_score": f1_score})
-
-        self.__plot_lr_findings(lr_find_loss, lr_find_lr)
-
-    @staticmethod
-    def __plot_lr_findings(lr_find_loss, lr_find_lr):
-        plt.figure(figsize=(20, 10))
-        plt.title("Learning rate")
-        plt.xlabel("Step")
-        plt.ylabel("Learning rate")
-        plt.plot(lr_find_lr)
-        plt.savefig("outputs/lr.png", bbox_inches='tight')
-        plt.close()
-
-        plt.figure(figsize=(20, 10))
-        plt.title("Learning rate")
-        plt.xlabel("Learning rate")
-        plt.ylabel("Loss")
-        plt.plot(lr_find_lr, lr_find_loss)
-        plt.savefig("outputs/lr_find.png", bbox_inches='tight')
-        plt.close()
 
     def make_recommended_params(self):
         parameters = list(self.model.named_parameters())
