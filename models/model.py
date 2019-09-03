@@ -103,7 +103,7 @@ class Model(object):
                                      batch_size=BATCH_SIZE)
 
         total_train_steps = int(EPOCHS
-                                * len(train_dev_dataset)
+                                * len(train_dev_dataset) / BATCH_SIZE
                                 * TRAIN_DEV_DATA_RATIO)
         warmup_train_steps = total_train_steps * 0.2
         # adam_args = self.make_params_dict()
