@@ -203,3 +203,4 @@ class DataPreprocessor:
             return self.techniques[index]
         except IndexError:
             print("No technique for index {}".format(index))
+            exit(1)

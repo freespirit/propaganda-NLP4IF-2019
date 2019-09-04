@@ -1,5 +1,4 @@
 import logging
-import numpy as np
 import os
 import pandas as pd
 import tqdm
@@ -37,6 +36,7 @@ OUTPUT_FLC_TXT_TEST = "outputs/test.flc.txt"
 logging.basicConfig(level=logging.INFO)
 
 
+# noinspection PyShadowingNames
 def save_slc_predictions(articles: Sequence[Article],
                          template_slc_file, output_file):
     output = pd.read_csv(template_slc_file, sep="\t", names=["article_id",
@@ -55,10 +55,22 @@ def save_slc_predictions(articles: Sequence[Article],
                   path_or_buf=output_file)
 
 
+# noinspection PyShadowingNames
 def save_flc_predictions(articles: Sequence[Article], output_file):
+    output = pd.DataFrame()
+
     for article in articles:
-        # article.flc_annotations
-        pass
+        article_id = article.article_id
+        for sentence_annotations in article.flc_annotations:
+            for annotation in sentence_annotations:
+                row = pd.DataFrame({"id": article_id,
+                                    "technique": annotation.get_label(),
+                                    "begin_offset": annotation.get_start_offset(),
+                                    "end_offset": annotation.get_end_offset()},
+                                   index=[0])
+                output = output.append(row, ignore_index=True)
+
+    output.to_csv(sep="\t", header=False, index=False, path_or_buf=output_file)
 
 
 # noinspection PyShadowingNames
@@ -106,8 +118,7 @@ if __name__ == "__main__":
     articles = preprocessor.preprocess(articles)
     train_data = preprocessor.prepare(articles)
 
-
-    model.train_slc(train_data)
+    # model.train(train_data)
 
     test_data_loader = ArticlesLoader(TEST_DATA_DIR,
                                       ARTICLE_FILE_ID_PATTERN,
@@ -118,10 +129,16 @@ if __name__ == "__main__":
     for article in tqdm.tqdm(test_articles):
         sentences = article.article_sentences
 
-        predictions = model.predict_slc(sentences)
-        article.set_slc_labels(predictions)
+        # predictions = model.predict_slc(sentences)
+        # article.set_slc_labels(predictions)
 
-        # model.predict_flc()
+        (tokens, predictions) = model.predict_flc(sentences)
+        spans = []
+        for t, p in list(zip(tokens, predictions)):
+            new_spans = preprocessor\
+                .make_flc_annotations_from_technique_labels(t, p)
+            spans.append(new_spans)
+        article.set_flc_annotations(spans)
 
     save_slc_predictions(test_articles, TEMPLATE_TEST_SLC, OUTPUT_SLC_TXT_TEST)
     save_flc_predictions(test_articles, OUTPUT_FLC_TXT_TEST)
