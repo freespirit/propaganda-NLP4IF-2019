@@ -2,6 +2,7 @@ from models.bert_for_propaganda import BertForPropaganda
 from sklearn.utils import deprecated
 from typing import Sequence, Tuple
 
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -44,7 +45,7 @@ TRAIN_DEV_DATA_RATIO = 0.95
 
 MAX_SEQUENCE_LEN = 128
 EPOCHS = 3
-BATCH_SIZE = 20
+BATCH_SIZE = 32
 LR_BASE = 4e-6
 LR_LARGE = 3e-6
 
@@ -109,16 +110,23 @@ class Model(object):
             dataset, [train_set_size, test_set_size])
 
         total_train_steps = int(EPOCHS
-                                * len(train_dev_dataset) / BATCH_SIZE
+                                * (len(train_dev_dataset) / BATCH_SIZE) # !!! note the ` / BATCH_SIZE` - the dataset's length is for each item, not for each batch!!!
                                 * TRAIN_DEV_DATA_RATIO)
         warmup_train_steps = total_train_steps * 0.2
         adam_args = self.make_recommended_params()
-        optimizer = AdamW(adam_args, lr=self.learning_rate, correct_bias=False)
-        scheduler = WarmupConstantSchedule(optimizer, warmup_train_steps)
+        optimizer = AdamW(adam_args, lr=1e-7, correct_bias=False)
+        lr_lambda = lambda x: math.exp(x
+                                       * math.log(2e-4 / 1e-7)
+                                       / total_train_steps)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
         df_metrics = pd.DataFrame()
 
         iteration = 0
+        lr_find_loss = []
+        lr_find_lr = []
+        smoothing = 0.05
+
         for epoch in range(EPOCHS):
             print("EPOCH {}/{}".format(epoch+1, EPOCHS))
             time_start = time.time()
@@ -151,9 +159,18 @@ class Model(object):
                 running_loss += class_loss.item()
                 self.__report_training_loss(class_loss.item(), tokens_loss.item(),
                                             running_loss, step + 1, iteration)
+
+                lr_step = optimizer.state_dict()["param_groups"][0]["lr"]
+                lr_find_lr.append(lr_step)
+                loss = (class_loss.item() + tokens_loss.item()) / 2
+                if iteration == 0:
+                    lr_find_loss.append(loss)
+                else:
+                    loss = smoothing * loss + (1 - smoothing) * lr_find_loss[-1]
+                    lr_find_loss.append(loss)
                 iteration += 1
 
-                batch_loss = pd.DataFrame({COLUMN_VALUE: class_loss.item(),
+                batch_loss = pd.DataFrame({COLUMN_VALUE: loss,
                                            COLUMN_METRIC: METRIC_TRAINING_LOSS},
                                           index=[0])
                 df_metrics = df_metrics.append(batch_loss, ignore_index=True)
@@ -171,6 +188,26 @@ class Model(object):
 
         self.__plot_validation_metrics(df_metrics)
         self.__report_test_results(test_dataset)
+
+        self.__plot_lr_findings(lr_find_loss, lr_find_lr)
+
+    @staticmethod
+    def __plot_lr_findings(lr_find_loss, lr_find_lr):
+        plt.figure(figsize=(20, 10))
+        plt.title("Learning rate")
+        plt.xlabel("Step")
+        plt.ylabel("Learning rate")
+        plt.plot(lr_find_lr)
+        plt.savefig("outputs/lr.png", bbox_inches='tight')
+        plt.close()
+
+        plt.figure(figsize=(20, 10))
+        plt.title("Learning rate")
+        plt.xlabel("Learning rate")
+        plt.ylabel("Loss")
+        plt.plot(lr_find_lr, lr_find_loss)
+        plt.savefig("outputs/lr_find.png", bbox_inches='tight')
+        plt.close()
 
     def make_recommended_params(self):
         parameters = list(self.model.named_parameters())
