@@ -1,4 +1,6 @@
-from typing import Sequence
+from typing import Dict, Sequence
+
+from tools.src.annotation import Annotation
 
 
 class Article:
@@ -6,7 +8,7 @@ class Article:
         self.article_id = article_id
         self.article_sentences = article_sentences
         self.slc_labels = []
-        self.flc_labels = []
+        self.flc_annotations = None
 
     def get_title(self):
         return self.article_sentences[0]
@@ -20,5 +22,10 @@ class Article:
         assert len(labels) == len(self.article_sentences)
         self.slc_labels = labels
 
-    def set_flc_labels(self, labels: Sequence[int]):
-        pass
+    def set_flc_annotations(self, annotation_spans: Sequence[Sequence[Annotation]]):
+        assert len(annotation_spans) == len(self.article_sentences)
+        self.flc_annotations = annotation_spans
+        # for sent, spans in annotation_spans.items():
+        #     for span in spans:
+        #         print(span)
+

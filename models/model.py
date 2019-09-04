@@ -1,3 +1,4 @@
+from models.bert_for_propaganda import BertForPropaganda
 from sklearn.utils import deprecated
 from typing import Sequence, Tuple
 
@@ -22,17 +23,17 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, \
     SequentialSampler
 from torch.utils.tensorboard import SummaryWriter
 
+
 BERT_BASE_CASED = 'bert-base-cased'
 BERT_BASE_UNCASED = 'bert-base-uncased'
 BERT_LARGE_CASED = 'bert-large-cased'
 BERT_LARGE_UNCASED = 'bert-large-uncased'
-BERT_VARIANT = BERT_BASE_UNCASED
 
-MAX_SEQUENCE_LEN = 128
+BERT_VARIANT = BERT_BASE_UNCASED
 
 COLUMN_TEXT = "text"
 COLUMN_LABEL = "label"
-
+COLUMN_TECHNIQUES = "techniques"
 COLUMN_VALUE = 'value'
 COLUMN_METRIC = 'metric'
 METRIC_TRAINING_LOSS = 'Training Loss'
@@ -41,8 +42,9 @@ METRIC_VALIDATION_F1 = 'Validation F1'
 TRAIN_TEST_DATA_RATIO = 0.95
 TRAIN_DEV_DATA_RATIO = 0.95
 
+MAX_SEQUENCE_LEN = 128
 EPOCHS = 3
-BATCH_SIZE = 32
+BATCH_SIZE = 20
 LR_BASE = 4e-6
 LR_LARGE = 3e-6
 
@@ -52,10 +54,9 @@ class Model(object):
         do_lower_case = BERT_VARIANT is BERT_BASE_UNCASED \
                         or BERT_VARIANT is BERT_LARGE_UNCASED
 
-        self.model = BertForSequenceClassification.from_pretrained(
-            BERT_VARIANT, num_labels=2)
-        self.tokenizer = BertTokenizer.from_pretrained(BERT_VARIANT,
-                                                       do_lower_case=do_lower_case)
+        self.model = BertForPropaganda.from_pretrained(BERT_VARIANT, num_labels=(2, 19))
+        self.tokenizer = BertTokenizer.from_pretrained(BERT_VARIANT, do_lower_case=do_lower_case)
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if torch.cuda.device_count() > 1:
             print("Found", torch.cuda.device_count(), "GPUs!")
@@ -63,7 +64,6 @@ class Model(object):
         self.model.to(self.device)
         print("Device used: {}".format(self.device))
 
-        self.learning_rate = 1e-3
         if BERT_VARIANT is BERT_BASE_UNCASED or BERT_VARIANT is BERT_BASE_CASED:
             self.learning_rate = LR_BASE
         else:
@@ -81,7 +81,7 @@ class Model(object):
         pass
 
     # noinspection PyTypeChecker
-    def train_slc(self, data: Sequence[Tuple[str, int]]):
+    def train_slc(self, data: Sequence[Tuple[str, int, Sequence[int]]]):
         """ Trains a model to recognize propaganda sentences
 
         :type data: list of tuples - (sentence , propaganda_technique)
@@ -90,14 +90,18 @@ class Model(object):
         assert isinstance(head[0], str)
         assert isinstance(head[1], int)
 
-        df = pd.DataFrame(data=data, columns=[COLUMN_TEXT, COLUMN_LABEL])
+        df = pd.DataFrame(data=data, columns=[COLUMN_TEXT,
+                                              COLUMN_LABEL,
+                                              COLUMN_TECHNIQUES])
         print("Training with {} samples".format(len(df.index)))
         print(df.head())
 
-        tokens_tensor = self.__tokenize_texts(df[COLUMN_TEXT].values)
+        tokens_tensor = self.tokenize_texts(df[COLUMN_TEXT].values)
         labels_tensor = torch.tensor(df[COLUMN_LABEL].values)
+        techniques_tensor = self.__prepare_technique_labels(df[COLUMN_TECHNIQUES].values)
+        #TODO also use attention mask
 
-        dataset = TensorDataset(tokens_tensor, labels_tensor)
+        dataset = TensorDataset(tokens_tensor, labels_tensor, techniques_tensor)
 
         train_set_size = int(TRAIN_TEST_DATA_RATIO * len(dataset))
         test_set_size = len(dataset) - train_set_size
@@ -132,19 +136,24 @@ class Model(object):
             for step, batch in enumerate(train_dataloader):
                 optimizer.zero_grad()
 
-                input_tensor, labels_tensor = tuple(t.to(self.device) for t in batch)
-                outputs = self.model(input_tensor, labels=labels_tensor)
-                loss = outputs[0]
+                batch = tuple(t.to(self.device) for t in batch)
+                input_tensor, labels_tensor, techniques_tensor = batch
+                assert len(labels_tensor) == len(techniques_tensor)
+                outputs = self.model(input_tensor, labels=(labels_tensor, techniques_tensor))
+                class_loss = outputs[0]
+                tokens_loss = outputs[1]
 
-                loss.backward()
+                class_loss.backward(retain_graph=True)
+                tokens_loss.backward()
                 optimizer.step()
                 scheduler.step()
 
-                running_loss += loss.item()
-                self.__report_training_loss(loss.item(), running_loss, step + 1, iteration)
+                running_loss += class_loss.item()
+                self.__report_training_loss(class_loss.item(), tokens_loss.item(),
+                                            running_loss, step + 1, iteration)
                 iteration += 1
 
-                batch_loss = pd.DataFrame({COLUMN_VALUE: loss.item(),
+                batch_loss = pd.DataFrame({COLUMN_VALUE: class_loss.item(),
                                            COLUMN_METRIC: METRIC_TRAINING_LOSS},
                                           index=[0])
                 df_metrics = df_metrics.append(batch_loss, ignore_index=True)
@@ -228,7 +237,8 @@ class Model(object):
         predictions = []
         self.model.eval()
         for batch in dataloader:
-            batch_inputs, batch_labels = tuple(t.to(self.device) for t in batch)
+            batch = tuple(t.to(self.device) for t in batch)
+            batch_inputs, batch_labels, batch_technique_labels = batch
             with torch.no_grad():
                 outputs = self.model(batch_inputs)
                 logits = outputs[0]
@@ -255,7 +265,7 @@ class Model(object):
 
         return (labels, predictions), (precision, recall, f1_score)
 
-    def __tokenize_texts(self, texts: np.ndarray):
+    def tokenize_texts(self, texts: np.ndarray):
         tokenizer = self.tokenizer
 
         def truncate(sentence: Sequence[str], max_len: int):
@@ -275,22 +285,39 @@ class Model(object):
 
         indexed_tokens = [tokenizer.convert_tokens_to_ids(tokens)
                           for tokens in tokenized_texts]
-        indexed_tokens = pad_sequences(indexed_tokens, maxlen=MAX_SEQUENCE_LEN,
-                                       dtype="long",
-                                       padding="post", truncating="post",
-                                       value=tokenizer.convert_tokens_to_ids(
-                                           tokenizer.pad_token))
+        indexed_tokens = self.__pad_sequences(
+            indexed_tokens,
+            tokenizer.convert_tokens_to_ids(tokenizer.pad_token))
         indexed_tensors = [torch.tensor(x) for x in indexed_tokens]
 
-        tokens_tensor = torch.nn.utils.rnn.pad_sequence(
-            indexed_tensors,
-            batch_first=True,
-            padding_value=tokenizer.convert_tokens_to_ids(tokenizer.pad_token))
+        tokens_tensor = self.__pad_tensors(indexed_tensors)
 
         return tokens_tensor
 
-    def __report_training_loss(self, loss, running_loss, epoch_step, iteration):
-        self.tb_writer.add_scalar("Batch loss", loss, iteration)
+    @staticmethod
+    def __pad_sequences(sequences, pad_token):
+        return pad_sequences(sequences, maxlen=MAX_SEQUENCE_LEN,
+                             padding="post", truncating="post",
+                             dtype="long", value=pad_token)
+
+    def __pad_tensors(self, tensors):
+        tokenizer = self.tokenizer
+        return torch.nn.utils.rnn.pad_sequence(
+            tensors,
+            batch_first=True,
+            padding_value=tokenizer.convert_tokens_to_ids(tokenizer.pad_token))
+
+    def __prepare_technique_labels(self, values):
+        padded_sequences = self.__pad_sequences(values, 0)
+        techniques_tensor = [torch.tensor(x) for x in padded_sequences]
+        techniques_tensor = self.__pad_tensors(techniques_tensor)
+        return techniques_tensor
+
+    def __report_training_loss(self, sequence_loss, tokens_loss,
+                               running_loss, epoch_step, iteration):
+        self.tb_writer.add_scalars("Batch loss",
+                                   {'sequence': sequence_loss, "tokens": tokens_loss},
+                                   iteration)
 
         if epoch_step % 100 == 0:
             print("Train loss at step {step}: {loss:.3f}".format(
@@ -335,7 +362,7 @@ class Model(object):
     def predict_slc(self, sentences: np.ndarray) -> Sequence[int]:
         result = list()
 
-        tokens_tensor = self.__tokenize_texts(sentences)
+        tokens_tensor = self.tokenize_texts(sentences)
         predict_dataset = TensorDataset(tokens_tensor)
         predict_dataloader = DataLoader(predict_dataset,
                                         batch_size=BATCH_SIZE)
@@ -352,5 +379,6 @@ class Model(object):
         assert len(result) == len(sentences)
 
         return result
+
     def predict_flc(self, articles):
         return [article for article in articles]

@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 import os
 import pandas as pd
 import tqdm
@@ -8,8 +9,10 @@ from typing import Sequence
 from models.article import Article
 from models.articles_loader import ArticlesLoader
 from models.cleaner import DataCleaner
-from models.model import Model
+from models.model import Model, COLUMN_TEXT, COLUMN_LABEL, COLUMN_TECHNIQUES
 from models.preprocessor import DataPreprocessor
+
+from tools.src.propaganda_techniques import Propaganda_Techniques
 
 DATASET_DIR = "datasets"
 PROPAGANDA_MODEL_FILE = "propaganda.model"
@@ -29,6 +32,7 @@ TEMPLATE_DEV_SLC = os.path.join(DATASET_DIR, "dev.template-output-SLC.out")
 TEMPLATE_TEST_SLC = os.path.join(DATASET_DIR, "test.template-output-SLC.out")
 OUTPUT_SLC_TXT_DEV = "outputs/dev.slc.txt"
 OUTPUT_SLC_TXT_TEST = "outputs/test.slc.txt"
+OUTPUT_FLC_TXT_TEST = "outputs/test.flc.txt"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -51,22 +55,59 @@ def save_slc_predictions(articles: Sequence[Article],
                   path_or_buf=output_file)
 
 
+def save_flc_predictions(articles: Sequence[Article], output_file):
+    for article in articles:
+        # article.flc_annotations
+        pass
+
+
+# noinspection PyShadowingNames
+def assert_backtranslating_labels_to_flc_works(articles, preprocessor):
+    for i, article in tqdm.tqdm(enumerate(articles)):
+        # print("Testing flc spans for article {}".format(article.article_id))
+        data = preprocessor.prepare([article])
+        df = pd.DataFrame(data=data,
+                          columns=[COLUMN_TEXT, COLUMN_LABEL, COLUMN_TECHNIQUES])
+
+        backtranslated_spans = []
+        for i, (sentence, technique_labels) in enumerate(zip(df[COLUMN_TEXT].values, df[COLUMN_TECHNIQUES].values)):
+            texts = [sentence]
+            backtranslated_spans.append(
+                preprocessor.make_flc_annotations_from_technique_labels(
+                    model.tokenize_texts(texts).detach().cpu().numpy(),
+                    technique_labels[128:]))
+
+        article_sentences_spans = article.flc_annotations
+        number_of_found_sentences_spans = len(backtranslated_spans)
+        number_of_article_sentences_spans = len(article_sentences_spans)
+
+        assert number_of_found_sentences_spans == \
+            number_of_article_sentences_spans
+
+
 if __name__ == "__main__":
+    model = Model()
+
     train_data_loader = ArticlesLoader(TRAIN_DATA_DIR,
                                        ARTICLE_FILE_ID_PATTERN,
                                        ARTICLE_LABEL_PATTERN_SLC,
                                        ARTICLE_LABEL_PATTERN_FLC,
                                        TRAIN_LABELS_DIR_SLC,
                                        TRAIN_LABELS_DIR_FLC)
-    preprocessor = DataPreprocessor()
+    propaganda_techniques = Propaganda_Techniques().techniques
+    propaganda_techniques.insert(0, None)
+
+    preprocessor = DataPreprocessor(model.tokenizer, propaganda_techniques)
     articles = train_data_loader.load_data()
+
+    # assert_backtranslating_labels_to_flc_works(articles, preprocessor)
 
     articles = DataCleaner().clean(articles)
     articles = preprocessor.preprocess(articles)
-    train_sentences = preprocessor.prepare(articles)
+    train_data = preprocessor.prepare(articles)
 
-    model = Model()
-    model.train_slc(train_sentences)
+
+    model.train_slc(train_data)
 
     test_data_loader = ArticlesLoader(TEST_DATA_DIR,
                                       ARTICLE_FILE_ID_PATTERN,
@@ -76,10 +117,11 @@ if __name__ == "__main__":
 
     for article in tqdm.tqdm(test_articles):
         sentences = article.article_sentences
+
         predictions = model.predict_slc(sentences)
         article.set_slc_labels(predictions)
 
-    save_slc_predictions(test_articles, TEMPLATE_TEST_SLC, OUTPUT_SLC_TXT_TEST)
+        # model.predict_flc()
 
-    # predictions = eval_model.predict_flc(dev_articles)
-    # save_flc_predictions(predictions)
+    save_slc_predictions(test_articles, TEMPLATE_TEST_SLC, OUTPUT_SLC_TXT_TEST)
+    save_flc_predictions(test_articles, OUTPUT_FLC_TXT_TEST)
