@@ -118,7 +118,7 @@ if __name__ == "__main__":
     articles = preprocessor.preprocess(articles)
     train_data = preprocessor.prepare(articles)
 
-    # model.train(train_data)
+    model.train(train_data)
 
     test_data_loader = ArticlesLoader(TEST_DATA_DIR,
                                       ARTICLE_FILE_ID_PATTERN,
@@ -129,8 +129,8 @@ if __name__ == "__main__":
     for article in tqdm.tqdm(test_articles):
         sentences = article.article_sentences
 
-        # predictions = model.predict_slc(sentences)
-        # article.set_slc_labels(predictions)
+        predictions = model.predict_slc(sentences)
+        article.set_slc_labels(predictions)
 
         (tokens, predictions) = model.predict_flc(sentences)
         spans = []
