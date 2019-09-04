@@ -44,7 +44,7 @@ TRAIN_DEV_DATA_RATIO = 0.95
 
 MAX_SEQUENCE_LEN = 128
 EPOCHS = 3
-BATCH_SIZE = 20
+BATCH_SIZE = 32
 LR_BASE = 4e-6
 LR_LARGE = 3e-6
 
@@ -81,7 +81,7 @@ class Model(object):
         pass
 
     # noinspection PyTypeChecker
-    def train_slc(self, data: Sequence[Tuple[str, int, Sequence[int]]]):
+    def train(self, data: Sequence[Tuple[str, int, Sequence[int]]]):
         """ Trains a model to recognize propaganda sentences
 
         :type data: list of tuples - (sentence , propaganda_technique)
@@ -380,5 +380,25 @@ class Model(object):
 
         return result
 
-    def predict_flc(self, articles):
-        return [article for article in articles]
+    def predict_flc(self, sentences):
+        predictions = list()
+
+        tokens_tensor = self.tokenize_texts(sentences)
+        predict_dataset = TensorDataset(tokens_tensor)
+        predict_dataloader = DataLoader(predict_dataset,
+                                        batch_size=BATCH_SIZE)
+        self.model.eval()
+        for i, batch in enumerate(predict_dataloader):
+            batch = tuple(t.to(self.device) for t in batch)
+            with torch.no_grad():
+                inputs = batch[0]
+                outputs = self.model(inputs)
+                multi_logits = outputs[1]
+
+                _, indices = torch.max(multi_logits, dim=2)
+                indices = indices.detach().cpu().numpy()
+            predictions.extend(indices)
+
+        assert len(predictions) == len(sentences)
+
+        return tokens_tensor.detach().cpu().numpy(), predictions
