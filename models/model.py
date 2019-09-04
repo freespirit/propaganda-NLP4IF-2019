@@ -116,7 +116,7 @@ class Model(object):
         adam_args = self.make_recommended_params()
         optimizer = AdamW(adam_args, lr=1e-7, correct_bias=False)
         lr_lambda = lambda x: math.exp(x
-                                       * math.log(2e-4 / 1e-7)
+                                       * math.log(1e-4 / 1e-7)
                                        / total_train_steps)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
@@ -162,15 +162,15 @@ class Model(object):
 
                 lr_step = optimizer.state_dict()["param_groups"][0]["lr"]
                 lr_find_lr.append(lr_step)
-                loss = (class_loss.item() + tokens_loss.item()) / 2
+                lr_loss = (class_loss.item() + tokens_loss.item())
                 if iteration == 0:
-                    lr_find_loss.append(loss)
+                    lr_find_loss.append(lr_loss)
                 else:
-                    loss = smoothing * loss + (1 - smoothing) * lr_find_loss[-1]
+                    loss = smoothing * lr_loss + (1 - smoothing) * lr_find_loss[-1]
                     lr_find_loss.append(loss)
                 iteration += 1
 
-                batch_loss = pd.DataFrame({COLUMN_VALUE: loss,
+                batch_loss = pd.DataFrame({COLUMN_VALUE: lr_loss,
                                            COLUMN_METRIC: METRIC_TRAINING_LOSS},
                                           index=[0])
                 df_metrics = df_metrics.append(batch_loss, ignore_index=True)
