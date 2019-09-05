@@ -17,7 +17,7 @@ DATASET_DIR = "datasets"
 PROPAGANDA_MODEL_FILE = "propaganda.model"
 
 TRAIN_DATA_DIR = os.path.join(DATASET_DIR, "train-articles")
-DEV_DATA_DIR = os.path.join(DATASET_DIR, "dev-articles")
+# DEV_DATA_DIR = os.path.join(DATASET_DIR, "dev-articles")
 TEST_DATA_DIR = os.path.join(DATASET_DIR, "test-articles")
 
 TRAIN_LABELS_DIR_SLC = os.path.join(DATASET_DIR, "train-labels-SLC")
@@ -27,9 +27,9 @@ ARTICLE_FILE_ID_PATTERN = "article(\\d*)\\.txt"
 ARTICLE_LABEL_PATTERN_FLC = "article{:s}.task-FLC.labels"
 ARTICLE_LABEL_PATTERN_SLC = "article{:s}.task-SLC.labels"
 
-TEMPLATE_DEV_SLC = os.path.join(DATASET_DIR, "dev.template-output-SLC.out")
+# TEMPLATE_DEV_SLC = os.path.join(DATASET_DIR, "dev.template-output-SLC.out")
 TEMPLATE_TEST_SLC = os.path.join(DATASET_DIR, "test.template-output-SLC.out")
-OUTPUT_SLC_TXT_DEV = "outputs/dev.slc.txt"
+# OUTPUT_SLC_TXT_DEV = "outputs/dev.slc.txt"
 OUTPUT_SLC_TXT_TEST = "outputs/test.slc.txt"
 OUTPUT_FLC_TXT_TEST = "outputs/test.flc.txt"
 
