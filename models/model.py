@@ -143,8 +143,9 @@ class Model(object):
                 class_loss = outputs[0]
                 tokens_loss = outputs[1]
 
-                class_loss.backward(retain_graph=True)
-                tokens_loss.backward()
+                (0.2 * tokens_loss).backward(retain_graph=True)
+                optimizer.step()
+                (0.8 * class_loss).backward()
                 optimizer.step()
                 scheduler.step()
 
