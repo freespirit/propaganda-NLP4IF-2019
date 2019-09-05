@@ -99,9 +99,9 @@ class Model(object):
         tokens_tensor = self.tokenize_texts(df[COLUMN_TEXT].values)
         labels_tensor = torch.tensor(df[COLUMN_LABEL].values)
         techniques_tensor = self.__prepare_technique_labels(df[COLUMN_TECHNIQUES].values)
-        #TODO also use attention mask
+        attention_masks = self.__prepare_attention_masks(tokens_tensor)
 
-        dataset = TensorDataset(tokens_tensor, labels_tensor, techniques_tensor)
+        dataset = TensorDataset(tokens_tensor, labels_tensor, techniques_tensor, attention_masks)
 
         train_set_size = int(TRAIN_TEST_DATA_RATIO * len(dataset))
         test_set_size = len(dataset) - train_set_size
@@ -137,9 +137,13 @@ class Model(object):
                 optimizer.zero_grad()
 
                 batch = tuple(t.to(self.device) for t in batch)
-                input_tensor, labels_tensor, techniques_tensor = batch
+                input_tensor, labels_tensor, techniques_tensor,\
+                    attention_masks_tensor = batch
+
                 assert len(labels_tensor) == len(techniques_tensor)
-                outputs = self.model(input_tensor, labels=(labels_tensor, techniques_tensor))
+                outputs = self.model(input_tensor,
+                                     attention_mask=attention_masks_tensor,
+                                     labels=(labels_tensor, techniques_tensor))
                 class_loss = outputs[0]
                 tokens_loss = outputs[1]
 
@@ -239,9 +243,10 @@ class Model(object):
         self.model.eval()
         for batch in dataloader:
             batch = tuple(t.to(self.device) for t in batch)
-            batch_inputs, batch_labels, batch_technique_labels = batch
+            batch_inputs, batch_labels, batch_technique_labels, batch_mask\
+                = batch
             with torch.no_grad():
-                outputs = self.model(batch_inputs)
+                outputs = self.model(batch_inputs, attention_mask=batch_mask)
                 logits = outputs[0]
 
                 _, indices = torch.max(logits, dim=1)
@@ -313,6 +318,16 @@ class Model(object):
         techniques_tensor = [torch.tensor(x) for x in padded_sequences]
         techniques_tensor = self.__pad_tensors(techniques_tensor)
         return techniques_tensor
+
+    def __prepare_attention_masks(self, tokens_tensor):
+        pad_token = self.tokenizer.pad_token
+        pad_token_id = self.tokenizer.convert_tokens_to_ids(pad_token)
+        attention_masks = []
+        for seq in tokens_tensor:
+            seq_mask = [float(i != pad_token_id) for i in seq]
+            attention_masks.append(torch.tensor(seq_mask))
+
+        return self.__pad_tensors(attention_masks)
 
     def __report_training_loss(self, sequence_loss, tokens_loss,
                                running_loss, epoch_step, iteration):
