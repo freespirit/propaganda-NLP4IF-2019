@@ -58,8 +58,8 @@ def save_slc_predictions(articles: Sequence[Article],
 # noinspection PyShadowingNames
 def save_flc_predictions(articles: Sequence[Article], output_file):
     output = pd.DataFrame()
-
-    for article in articles:
+    print("Saving flc predictions...")
+    for article in tqdm.tqdm(articles):
         article_id = article.article_id
         for sentence_annotations in article.flc_annotations:
             for annotation in sentence_annotations:
@@ -70,7 +70,9 @@ def save_flc_predictions(articles: Sequence[Article], output_file):
                                    index=[0])
                 output = output.append(row, ignore_index=True)
 
+    print("Saving {} annotations to {}".format(len(output.index), output_file))
     output.to_csv(sep="\t", header=False, index=False, path_or_buf=output_file)
+    print("Done")
 
 
 # noinspection PyShadowingNames
