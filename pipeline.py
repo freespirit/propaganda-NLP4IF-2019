@@ -17,7 +17,7 @@ DATASET_DIR = "datasets"
 PROPAGANDA_MODEL_FILE = "propaganda.model"
 
 TRAIN_DATA_DIR = os.path.join(DATASET_DIR, "train-articles")
-DEV_DATA_DIR = os.path.join(DATASET_DIR, "dev-articles")
+# DEV_DATA_DIR = os.path.join(DATASET_DIR, "dev-articles")
 TEST_DATA_DIR = os.path.join(DATASET_DIR, "test-articles")
 
 TRAIN_LABELS_DIR_SLC = os.path.join(DATASET_DIR, "train-labels-SLC")
@@ -27,9 +27,9 @@ ARTICLE_FILE_ID_PATTERN = "article(\\d*)\\.txt"
 ARTICLE_LABEL_PATTERN_FLC = "article{:s}.task-FLC.labels"
 ARTICLE_LABEL_PATTERN_SLC = "article{:s}.task-SLC.labels"
 
-TEMPLATE_DEV_SLC = os.path.join(DATASET_DIR, "dev.template-output-SLC.out")
+# TEMPLATE_DEV_SLC = os.path.join(DATASET_DIR, "dev.template-output-SLC.out")
 TEMPLATE_TEST_SLC = os.path.join(DATASET_DIR, "test.template-output-SLC.out")
-OUTPUT_SLC_TXT_DEV = "outputs/dev.slc.txt"
+# OUTPUT_SLC_TXT_DEV = "outputs/dev.slc.txt"
 OUTPUT_SLC_TXT_TEST = "outputs/test.slc.txt"
 OUTPUT_FLC_TXT_TEST = "outputs/test.flc.txt"
 
@@ -58,8 +58,8 @@ def save_slc_predictions(articles: Sequence[Article],
 # noinspection PyShadowingNames
 def save_flc_predictions(articles: Sequence[Article], output_file):
     output = pd.DataFrame()
-
-    for article in articles:
+    print("Saving flc predictions...")
+    for article in tqdm.tqdm(articles):
         article_id = article.article_id
         for sentence_annotations in article.flc_annotations:
             for annotation in sentence_annotations:
@@ -70,7 +70,9 @@ def save_flc_predictions(articles: Sequence[Article], output_file):
                                    index=[0])
                 output = output.append(row, ignore_index=True)
 
+    print("Saving {} annotations to {}".format(len(output.index), output_file))
     output.to_csv(sep="\t", header=False, index=False, path_or_buf=output_file)
+    print("Done")
 
 
 # noinspection PyShadowingNames
